@@ -1,42 +1,11 @@
-﻿---
+---
+import { buildVisitorFromRequest, upsertLatestVisitor } from "../lib/visitorState";
+
 export const prerender = false;
 
-const toFlag = (code) => {
-	if (!/^[A-Z]{2}$/.test(code)) return "🏳️";
-	return String.fromCodePoint(...[...code].map((char) => 127397 + char.charCodeAt(0)));
-};
+const currentVisitor = buildVisitorFromRequest(Astro.request, Astro.clientAddress);
+const { visitor: shownVisitor, version } = upsertLatestVisitor(currentVisitor);
 
-const cf = Astro.request.cf ?? {};
-
-const rawIp = Astro.request.headers.get("cf-connecting-ip")
-	?? Astro.request.headers.get("x-forwarded-for")
-	?? Astro.clientAddress
-	?? "Unknown";
-
-const ip = rawIp.split(",")[0]?.trim() || "Unknown";
-
-const countryCode = typeof cf.country === "string" && cf.country.length === 2
-	? cf.country.toUpperCase()
-	: "";
-
-const currentVisitor = {
-	ip,
-	countryCode,
-	countryName: cf.countryName ?? countryCode ?? "Unknown Country",
-	city: cf.city ?? "Unknown City",
-	region: cf.region ?? "Unknown Region",
-	flag: toFlag(countryCode),
-	updatedAt: new Date().toLocaleString("zh-CN", { hour12: false })
-};
-
-const stateKey = "__latest_visitor_snapshot__";
-const globalState = globalThis as Record<string, any>;
-
-if (!globalState[stateKey] || globalState[stateKey].ip !== currentVisitor.ip) {
-	globalState[stateKey] = currentVisitor;
-}
-
-const shownVisitor = globalState[stateKey];
 const locationText = `${shownVisitor.city}, ${shownVisitor.region}`;
 const flagImageUrl = shownVisitor.countryCode
 	? `https://flagcdn.com/w80/${shownVisitor.countryCode.toLowerCase()}.png`
@@ -57,6 +26,7 @@ const flagImageUrl = shownVisitor.countryCode
 				--text-main: #0f172a;
 				--text-sub: #334155;
 				--line: rgba(15, 23, 42, 0.12);
+				--toast: rgba(15, 23, 42, 0.94);
 			}
 
 			* {
@@ -145,17 +115,48 @@ const flagImageUrl = shownVisitor.countryCode
 				word-break: break-all;
 				text-align: right;
 			}
+
+			#update-toast {
+				position: fixed;
+				top: 12px;
+				left: 12px;
+				max-width: min(80vw, 320px);
+				padding: 10px 12px;
+				border-radius: 10px;
+				background: var(--toast);
+				color: #ffffff;
+				font-size: 13px;
+				line-height: 1.4;
+				box-shadow: 0 12px 24px rgba(15, 23, 42, 0.28);
+				opacity: 0;
+				transform: translateY(-8px);
+				pointer-events: none;
+				transition: opacity 0.25s ease, transform 0.25s ease;
+			}
+
+			#update-toast.show {
+				opacity: 1;
+				transform: translateY(0);
+			}
 		</style>
 	</head>
-	<body>
+	<body data-version={String(version)} data-country={shownVisitor.countryCode}>
+		<div id="update-toast" role="status" aria-live="polite"></div>
+
 		<main class="panel">
-			<div class="badge">
+			<div class="badge" id="country-badge">
 				{flagImageUrl ? (
-					<img class="flag-icon" src={flagImageUrl} alt={`${shownVisitor.countryName} flag`} loading="eager" />
+					<img
+						class="flag-icon"
+						id="flag-image"
+						src={flagImageUrl}
+						alt={`${shownVisitor.countryName} flag`}
+						loading="eager"
+					/>
 				) : (
-					<span>{shownVisitor.flag}</span>
+					<span id="flag-emoji">{shownVisitor.flag}</span>
 				)}
-				<span>{shownVisitor.countryName}</span>
+				<span id="country-name">{shownVisitor.countryName}</span>
 			</div>
 			<h1>最近访问者</h1>
 			<p class="meta">仅在检测到新 IP 时切换显示</p>
@@ -163,21 +164,110 @@ const flagImageUrl = shownVisitor.countryCode
 			<section class="list" aria-label="visitor info">
 				<div class="item">
 					<span class="key">IP</span>
-					<span class="value">{shownVisitor.ip}</span>
+					<span class="value" id="visitor-ip">{shownVisitor.ip}</span>
 				</div>
 				<div class="item">
 					<span class="key">地址</span>
-					<span class="value">{locationText}</span>
+					<span class="value" id="visitor-location">{locationText}</span>
 				</div>
 				<div class="item">
 					<span class="key">国家代码</span>
-					<span class="value">{shownVisitor.countryCode || "Unknown"}</span>
+					<span class="value" id="visitor-country-code">{shownVisitor.countryCode || "Unknown"}</span>
 				</div>
 				<div class="item">
 					<span class="key">最近更新时间</span>
-					<span class="value">{shownVisitor.updatedAt}</span>
+					<span class="value" id="visitor-updated-at">{shownVisitor.updatedAt}</span>
 				</div>
 			</section>
 		</main>
+
+		<script>
+			const toFlag = (code) => {
+				if (!/^[A-Z]{2}$/.test(code)) return "🏳️";
+				return String.fromCodePoint(...[...code].map((char) => 127397 + char.charCodeAt(0)));
+			};
+
+			const body = document.body;
+			let knownVersion = Number(body.dataset.version || "0");
+			let knownCountry = body.dataset.country || "";
+			let toastTimer = null;
+
+			const toastEl = document.getElementById("update-toast");
+			const countryNameEl = document.getElementById("country-name");
+			const ipEl = document.getElementById("visitor-ip");
+			const locationEl = document.getElementById("visitor-location");
+			const countryCodeEl = document.getElementById("visitor-country-code");
+			const updatedAtEl = document.getElementById("visitor-updated-at");
+			const badgeEl = document.getElementById("country-badge");
+
+			const showToast = (message) => {
+				if (!toastEl) return;
+				toastEl.textContent = message;
+				toastEl.classList.add("show");
+				clearTimeout(toastTimer);
+				toastTimer = setTimeout(() => {
+					toastEl.classList.remove("show");
+				}, 3200);
+			};
+
+			const renderFlag = (countryCode, countryName) => {
+				if (!badgeEl) return;
+				const oldImg = document.getElementById("flag-image");
+				const oldEmoji = document.getElementById("flag-emoji");
+
+				if (oldImg) oldImg.remove();
+				if (oldEmoji) oldEmoji.remove();
+
+				if (/^[A-Z]{2}$/.test(countryCode)) {
+					const img = document.createElement("img");
+					img.id = "flag-image";
+					img.className = "flag-icon";
+					img.alt = `${countryName} flag`;
+					img.loading = "eager";
+					img.src = `https://flagcdn.com/w80/${countryCode.toLowerCase()}.png`;
+					badgeEl.insertBefore(img, countryNameEl);
+					return;
+				}
+
+				const span = document.createElement("span");
+				span.id = "flag-emoji";
+				span.textContent = toFlag(countryCode || "");
+				badgeEl.insertBefore(span, countryNameEl);
+			};
+
+			const applyVisitor = (visitor) => {
+				if (!visitor) return;
+				if (countryNameEl) countryNameEl.textContent = visitor.countryName || "Unknown Country";
+				if (ipEl) ipEl.textContent = visitor.ip || "Unknown";
+				if (locationEl) locationEl.textContent = `${visitor.city || "Unknown City"}, ${visitor.region || "Unknown Region"}`;
+				if (countryCodeEl) countryCodeEl.textContent = visitor.countryCode || "Unknown";
+				if (updatedAtEl) updatedAtEl.textContent = visitor.updatedAt || "-";
+				renderFlag(visitor.countryCode || "", visitor.countryName || "Unknown Country");
+			};
+
+			const pollLatest = async () => {
+				try {
+					const res = await fetch("/api/latest-visitor.json", { cache: "no-store" });
+					if (!res.ok) return;
+					const data = await res.json();
+					const nextVersion = Number(data.version || 0);
+					const visitor = data.visitor;
+					if (!visitor || nextVersion <= knownVersion) return;
+
+					const nextCountry = visitor.countryCode || "";
+					if (nextCountry && knownCountry && nextCountry !== knownCountry) {
+						showToast(`${visitor.countryName || "未知国家"} 的用户访问了`);
+					}
+
+					applyVisitor(visitor);
+					knownVersion = nextVersion;
+					knownCountry = nextCountry;
+				} catch {
+					// Keep silent while polling.
+				}
+			};
+
+			setInterval(pollLatest, 2500);
+		</script>
 	</body>
 </html>
