@@ -1,4 +1,4 @@
-export type VisitorSnapshot = {
+﻿export type VisitorSnapshot = {
 	ip: string;
 	countryCode: string;
 	countryName: string;
@@ -9,15 +9,24 @@ export type VisitorSnapshot = {
 	updatedAtMs: number;
 };
 
+export type CountryVisit = {
+	countryCode: string;
+	countryName: string;
+	flag: string;
+	lastSeenAt: string;
+	lastSeenAtMs: number;
+};
+
 type VisitorStateStore = {
 	latest: VisitorSnapshot | null;
 	version: number;
+	recentCountries: CountryVisit[];
 };
 
 const STATE_KEY = "__latest_visitor_state__";
 
 const toFlag = (code: string): string => {
-	if (!/^[A-Z]{2}$/.test(code)) return "🏳️";
+	if (!/^[A-Z]{2}$/.test(code)) return "\u{1F3F3}\uFE0F";
 	return String.fromCodePoint(...[...code].map((char) => 127397 + char.charCodeAt(0)));
 };
 
@@ -31,9 +40,29 @@ const getStore = (): VisitorStateStore => {
 		globalState[STATE_KEY] = {
 			latest: null,
 			version: 0,
+			recentCountries: [],
 		} satisfies VisitorStateStore;
 	}
 	return globalState[STATE_KEY] as VisitorStateStore;
+};
+
+const updateRecentCountries = (store: VisitorStateStore, visitor: VisitorSnapshot): CountryVisit[] => {
+	const key = visitor.countryCode || visitor.countryName || "Unknown";
+	const filtered = store.recentCountries.filter((item) => {
+		const itemKey = item.countryCode || item.countryName || "Unknown";
+		return itemKey !== key;
+	});
+
+	const nextItem: CountryVisit = {
+		countryCode: visitor.countryCode,
+		countryName: visitor.countryName,
+		flag: visitor.flag,
+		lastSeenAt: visitor.updatedAt,
+		lastSeenAtMs: visitor.updatedAtMs,
+	};
+
+	store.recentCountries = [nextItem, ...filtered].slice(0, 5);
+	return store.recentCountries;
 };
 
 export const buildVisitorFromRequest = (request: Request, clientAddress?: string): VisitorSnapshot => {
@@ -65,23 +94,29 @@ export const buildVisitorFromRequest = (request: Request, clientAddress?: string
 
 export const upsertLatestVisitor = (
 	nextVisitor: VisitorSnapshot,
-): { visitor: VisitorSnapshot; version: number; changed: boolean } => {
+): { visitor: VisitorSnapshot; version: number; changed: boolean; recentCountries: CountryVisit[] } => {
 	const store = getStore();
 	const changed = !store.latest || store.latest.ip !== nextVisitor.ip;
 
 	if (changed) {
 		store.latest = nextVisitor;
 		store.version += 1;
+		updateRecentCountries(store, nextVisitor);
 	}
 
 	return {
 		visitor: store.latest ?? nextVisitor,
 		version: store.version,
 		changed,
+		recentCountries: store.recentCountries,
 	};
 };
 
-export const getLatestVisitorState = (): { visitor: VisitorSnapshot | null; version: number } => {
+export const getLatestVisitorState = (): {
+	visitor: VisitorSnapshot | null;
+	version: number;
+	recentCountries: CountryVisit[];
+} => {
 	const store = getStore();
-	return { visitor: store.latest, version: store.version };
+	return { visitor: store.latest, version: store.version, recentCountries: store.recentCountries };
 };

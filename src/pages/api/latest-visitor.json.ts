@@ -4,13 +4,14 @@ import { getLatestVisitorState } from "../../lib/visitorState";
 export const prerender = false;
 
 export const GET: APIRoute = async () => {
-	const { visitor, version } = getLatestVisitorState();
+	const { visitor, version, recentCountries } = getLatestVisitorState();
 
 	return new Response(
 		JSON.stringify({
 			ok: true,
 			version,
 			visitor,
+			recentCountries,
 		}),
 		{
 			status: 200,

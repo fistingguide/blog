@@ -1,15 +1,18 @@
----
+﻿---
 import { buildVisitorFromRequest, upsertLatestVisitor } from "../lib/visitorState";
 
 export const prerender = false;
 
 const currentVisitor = buildVisitorFromRequest(Astro.request, Astro.clientAddress);
-const { visitor: shownVisitor, version } = upsertLatestVisitor(currentVisitor);
+const { visitor: shownVisitor, version, recentCountries } = upsertLatestVisitor(currentVisitor);
 
 const locationText = `${shownVisitor.city}, ${shownVisitor.region}`;
 const flagImageUrl = shownVisitor.countryCode
 	? `https://flagcdn.com/w80/${shownVisitor.countryCode.toLowerCase()}.png`
 	: "";
+
+const getFlagUrl = (countryCode: string) =>
+	countryCode ? `https://flagcdn.com/w40/${countryCode.toLowerCase()}.png` : "";
 ---
 
 <!doctype html>
@@ -26,7 +29,6 @@ const flagImageUrl = shownVisitor.countryCode
 				--text-main: #0f172a;
 				--text-sub: #334155;
 				--line: rgba(15, 23, 42, 0.12);
-				--toast: rgba(15, 23, 42, 0.94);
 			}
 
 			* {
@@ -116,43 +118,101 @@ const flagImageUrl = shownVisitor.countryCode
 				text-align: right;
 			}
 
-			#update-toast {
+			#country-history {
 				position: fixed;
 				top: 12px;
 				left: 12px;
-				max-width: min(80vw, 320px);
-				padding: 10px 12px;
-				border-radius: 10px;
-				background: var(--toast);
-				color: #ffffff;
-				font-size: 13px;
-				line-height: 1.4;
-				box-shadow: 0 12px 24px rgba(15, 23, 42, 0.28);
-				opacity: 0;
-				transform: translateY(-8px);
-				pointer-events: none;
-				transition: opacity 0.25s ease, transform 0.25s ease;
+				width: min(86vw, 280px);
+				padding: 12px;
+				border-radius: 12px;
+				border: 1px solid var(--line);
+				background: rgba(255, 255, 255, 0.9);
+				backdrop-filter: blur(6px);
+				box-shadow: 0 12px 22px rgba(15, 23, 42, 0.16);
 			}
 
-			#update-toast.show {
-				opacity: 1;
-				transform: translateY(0);
+			#country-history h2 {
+				margin: 0 0 8px;
+				font-size: 13px;
+				color: var(--text-sub);
+			}
+
+			#country-history-list {
+				list-style: none;
+				margin: 0;
+				padding: 0;
+				display: grid;
+				gap: 6px;
+			}
+
+			#country-history-list li {
+				display: flex;
+				align-items: center;
+				justify-content: space-between;
+				gap: 8px;
+				padding: 6px 8px;
+				border-radius: 8px;
+				background: rgba(255, 255, 255, 0.86);
+				border: 1px solid var(--line);
+				font-size: 12px;
+			}
+
+			.history-left {
+				display: inline-flex;
+				align-items: center;
+				gap: 6px;
+				min-width: 0;
+			}
+
+			.history-flag {
+				width: 18px;
+				height: 13px;
+				border-radius: 2px;
+				border: 1px solid var(--line);
+				object-fit: cover;
+				background: #fff;
+			}
+
+			.history-name {
+				white-space: nowrap;
+				overflow: hidden;
+				text-overflow: ellipsis;
+				max-width: 120px;
+			}
+
+			.history-time {
+				color: var(--text-sub);
+				white-space: nowrap;
 			}
 		</style>
 	</head>
-	<body data-version={String(version)} data-country={shownVisitor.countryCode} data-ip={shownVisitor.ip}>
-		<div id="update-toast" role="status" aria-live="polite"></div>
+	<body data-version={String(version)}>
+		<aside id="country-history" aria-label="recent countries">
+			<h2>最近 5 个访问国家</h2>
+			<ul id="country-history-list">
+				{recentCountries.map((item) => {
+					const itemFlagUrl = getFlagUrl(item.countryCode);
+					return (
+						<li>
+							<span class="history-left">
+								{itemFlagUrl ? (
+									<img class="history-flag" src={itemFlagUrl} alt={`${item.countryName} flag`} loading="eager" />
+								) : (
+									<span>{item.flag}</span>
+								)}
+								<span class="history-name">{item.countryName}</span>
+							</span>
+							<span class="history-time">{item.lastSeenAt}</span>
+						</li>
+					);
+				})}
+			</ul>
+		</aside>
 
 		<main class="panel">
 			<div class="badge" id="country-badge">
 				{flagImageUrl ? (
-					<img
-						class="flag-icon"
-						id="flag-image"
-						src={flagImageUrl}
-						alt={`${shownVisitor.countryName} flag`}
-						loading="eager"
-					/>
+					<img class="flag-icon" id="flag-image" src={flagImageUrl} alt={`${shownVisitor.countryName} flag`} loading="eager" />
 				) : (
 					<span id="flag-emoji">{shownVisitor.flag}</span>
 				)}
@@ -183,33 +243,20 @@ const flagImageUrl = shownVisitor.countryCode
 
 		<script>
 			const toFlag = (code) => {
-				if (!/^[A-Z]{2}$/.test(code)) return "🏳️";
+				if (!/^[A-Z]{2}$/.test(code)) return "\u{1F3F3}\uFE0F";
 				return String.fromCodePoint(...[...code].map((char) => 127397 + char.charCodeAt(0)));
 			};
 
 			const body = document.body;
 			let knownVersion = Number(body.dataset.version || "0");
-			let knownCountry = body.dataset.country || "";
-			let knownIp = body.dataset.ip || "";
-			let toastTimer = null;
 
-			const toastEl = document.getElementById("update-toast");
 			const countryNameEl = document.getElementById("country-name");
 			const ipEl = document.getElementById("visitor-ip");
 			const locationEl = document.getElementById("visitor-location");
 			const countryCodeEl = document.getElementById("visitor-country-code");
 			const updatedAtEl = document.getElementById("visitor-updated-at");
 			const badgeEl = document.getElementById("country-badge");
-
-			const showToast = (message) => {
-				if (!toastEl) return;
-				toastEl.textContent = message;
-				toastEl.classList.add("show");
-				clearTimeout(toastTimer);
-				toastTimer = setTimeout(() => {
-					toastEl.classList.remove("show");
-				}, 3200);
-			};
+			const countryHistoryListEl = document.getElementById("country-history-list");
 
 			const renderFlag = (countryCode, countryName) => {
 				if (!badgeEl) return;
@@ -246,27 +293,60 @@ const flagImageUrl = shownVisitor.countryCode
 				renderFlag(visitor.countryCode || "", visitor.countryName || "Unknown Country");
 			};
 
+			const renderRecentCountries = (recentCountries) => {
+				if (!countryHistoryListEl) return;
+				countryHistoryListEl.innerHTML = "";
+
+				for (const item of recentCountries.slice(0, 5)) {
+					const li = document.createElement("li");
+
+					const left = document.createElement("span");
+					left.className = "history-left";
+
+					if (/^[A-Z]{2}$/.test(item.countryCode || "")) {
+						const img = document.createElement("img");
+						img.className = "history-flag";
+						img.loading = "eager";
+						img.alt = `${item.countryName || "Unknown"} flag`;
+						img.src = `https://flagcdn.com/w40/${String(item.countryCode).toLowerCase()}.png`;
+						left.appendChild(img);
+					} else {
+						const emoji = document.createElement("span");
+						emoji.textContent = toFlag(item.countryCode || "");
+						left.appendChild(emoji);
+					}
+
+					const name = document.createElement("span");
+					name.className = "history-name";
+					name.textContent = item.countryName || "Unknown Country";
+					left.appendChild(name);
+
+					const time = document.createElement("span");
+					time.className = "history-time";
+					time.textContent = item.lastSeenAt || "-";
+
+					li.appendChild(left);
+					li.appendChild(time);
+					countryHistoryListEl.appendChild(li);
+				}
+			};
+
 			const pollLatest = async () => {
 				try {
 					const res = await fetch("/api/latest-visitor.json", { cache: "no-store" });
 					if (!res.ok) return;
 					const data = await res.json();
 					const nextVersion = Number(data.version || 0);
-					const visitor = data.visitor;
-					if (!visitor || nextVersion <= knownVersion) return;
+					if (nextVersion <= knownVersion) return;
 
-					const nextCountry = visitor.countryCode || "";
-					const nextIp = visitor.ip || "";
-					if (nextIp && nextIp !== knownIp) {
-						showToast(`${visitor.countryName || "未知国家"} 的用户访问了`);
+					if (data.visitor) {
+						applyVisitor(data.visitor);
 					}
 
-					applyVisitor(visitor);
+					renderRecentCountries(Array.isArray(data.recentCountries) ? data.recentCountries : []);
 					knownVersion = nextVersion;
-					knownCountry = nextCountry;
-					knownIp = nextIp;
 				} catch {
-					// Keep silent while polling.
+					// ignore polling errors
 				}
 			};
 
