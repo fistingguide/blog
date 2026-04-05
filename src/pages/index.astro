@@ -1,65 +1,81 @@
 ﻿---
-import BaseHead from '../components/BaseHead.astro';
-import Header from '../components/Header.astro';
-import Footer from '../components/Footer.astro';
-import { SITE_TITLE, SITE_DESCRIPTION } from '../consts';
+export const prerender = false;
+const cf = Astro.request.cf ?? {};
+
+const ipHeader = Astro.request.headers.get("cf-connecting-ip")
+	?? Astro.request.headers.get("x-forwarded-for")
+	?? Astro.clientAddress
+	?? "Unknown";
+
+const countryCode = typeof cf.country === "string" && cf.country.length === 2
+	? cf.country.toUpperCase()
+	: "";
+
+const toFlag = (code) => {
+	if (!/^[A-Z]{2}$/.test(code)) return "🏳️";
+	return String.fromCodePoint(...[...code].map((char) => 127397 + char.charCodeAt(0)));
+};
+
+const countryName = cf.countryName ?? countryCode ?? "Unknown";
+const city = cf.city ?? "Unknown City";
+const region = cf.region ?? "Unknown Region";
+const locationText = `${city}, ${region}`;
+const flag = toFlag(countryCode);
 ---
 
 <!doctype html>
 <html lang="zh-CN">
 	<head>
-		<BaseHead title={SITE_TITLE} description={SITE_DESCRIPTION} />
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>Visitor Info</title>
 		<style>
-			.grid {
-				display: grid;
-				grid-template-columns: repeat(2, minmax(0, 1fr));
-				gap: 1rem;
-				margin-top: 1.5rem;
+			:root {
+				color-scheme: light;
 			}
-			.card {
-				display: block;
-				padding: 1.25rem;
-				border-radius: 12px;
-				border: 1px solid rgba(var(--gray-light), 1);
-				text-decoration: none;
-				color: rgb(var(--gray-dark));
-				background: white;
-				transition: box-shadow 0.2s ease, transform 0.2s ease;
+			* {
+				box-sizing: border-box;
 			}
-			.card:hover {
-				transform: translateY(-2px);
-				box-shadow: var(--box-shadow);
-			}
-			.card h2 {
-				margin: 0 0 0.5rem;
-				color: rgb(var(--black));
-			}
-			.card p {
+			body {
 				margin: 0;
+				min-height: 100vh;
+				display: grid;
+				place-items: center;
+				background: #ffffff;
+				font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
 			}
-			@media (max-width: 720px) {
-				.grid {
-					grid-template-columns: 1fr;
-				}
+			#panel {
+				display: grid;
+				gap: 10px;
+				padding: 20px 24px;
+				border: 1px solid #d8d8d8;
+				border-radius: 12px;
+				min-width: min(90vw, 420px);
+				background: #ffffff;
+				color: #111111;
+			}
+			.title {
+				font-size: 24px;
+				font-weight: 600;
+			}
+			.line {
+				font-size: 16px;
+				line-height: 1.5;
 			}
 		</style>
 	</head>
 	<body>
-		<Header />
-		<main>
-			<h1>博客栏目</h1>
-			<p>请选择一个一级栏目进入。</p>
-			<div class="grid">
-				<a class="card" href="/beginner">
-					<h2>拳交入门</h2>
-					<p>基础概念、准备流程与安全沟通。</p>
-				</a>
-				<a class="card" href="/stories">
-					<h2>小故事</h2>
-					<p>体验记录与关系互动片段。</p>
-				</a>
-			</div>
-		</main>
-		<Footer />
+		<div id="panel">
+			<div class="title">{flag} {countryName}</div>
+			<div class="line">IP: {ipHeader}</div>
+			<div class="line">地址: {locationText}</div>
+		</div>
+		<script>
+			setTimeout(() => {
+				const panel = document.getElementById("panel");
+				if (panel) panel.remove();
+			}, 1000);
+		</script>
 	</body>
 </html>
+
