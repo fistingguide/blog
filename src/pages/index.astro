@@ -140,7 +140,7 @@ const flagImageUrl = shownVisitor.countryCode
 			}
 		</style>
 	</head>
-	<body data-version={String(version)} data-country={shownVisitor.countryCode}>
+	<body data-version={String(version)} data-country={shownVisitor.countryCode} data-ip={shownVisitor.ip}>
 		<div id="update-toast" role="status" aria-live="polite"></div>
 
 		<main class="panel">
@@ -190,6 +190,7 @@ const flagImageUrl = shownVisitor.countryCode
 			const body = document.body;
 			let knownVersion = Number(body.dataset.version || "0");
 			let knownCountry = body.dataset.country || "";
+			let knownIp = body.dataset.ip || "";
 			let toastTimer = null;
 
 			const toastEl = document.getElementById("update-toast");
@@ -255,13 +256,15 @@ const flagImageUrl = shownVisitor.countryCode
 					if (!visitor || nextVersion <= knownVersion) return;
 
 					const nextCountry = visitor.countryCode || "";
-					if (nextCountry && knownCountry && nextCountry !== knownCountry) {
+					const nextIp = visitor.ip || "";
+					if (nextIp && nextIp !== knownIp) {
 						showToast(`${visitor.countryName || "未知国家"} 的用户访问了`);
 					}
 
 					applyVisitor(visitor);
 					knownVersion = nextVersion;
 					knownCountry = nextCountry;
+					knownIp = nextIp;
 				} catch {
 					// Keep silent while polling.
 				}
