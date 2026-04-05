@@ -3,8 +3,9 @@ import { getVisitorState } from "../../lib/visitorState";
 
 export const prerender = false;
 
-export const GET: APIRoute = async () => {
-	const { latest, recent, version } = getVisitorState();
+export const GET: APIRoute = async ({ locals }) => {
+	const env = (locals.runtime?.env ?? {}) as { VISITOR_STATE?: KVNamespace };
+	const { latest, recent, version } = await getVisitorState(env);
 
 	return new Response(
 		JSON.stringify({

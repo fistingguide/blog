@@ -65,3 +65,7 @@ This theme is based off of the lovely [Bear Blog](https://github.com/HermanMarti
 
 
 1
+
+
+
+curl "https://blog.fistingguide.workers.dev/api/report-visitor.json?ip=8.8.8.8&flag=%F0%9F%87%BA%F0%9F%87%B8&time=2026-04-05%2014:30:00"

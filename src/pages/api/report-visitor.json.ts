@@ -56,12 +56,13 @@ export const OPTIONS: APIRoute = async () => {
 	});
 };
 
-export const GET: APIRoute = async ({ request }) => {
+export const GET: APIRoute = async ({ request, locals }) => {
 	const input = getFromUrl(request);
 	if (!input.ip) return badRequest("Missing required parameter: ip");
 
+	const env = (locals.runtime?.env ?? {}) as { VISITOR_STATE?: KVNamespace };
 	const next = normalizeVisitorInput(input);
-	const { latest, recent, version } = pushVisitorRecord(next);
+	const { latest, recent, version } = await pushVisitorRecord(next, env);
 
 	return new Response(JSON.stringify({ ok: true, version, latest, recent }), {
 		status: 200,
@@ -69,12 +70,13 @@ export const GET: APIRoute = async ({ request }) => {
 	});
 };
 
-export const POST: APIRoute = async ({ request }) => {
+export const POST: APIRoute = async ({ request, locals }) => {
 	const input = await getFromBody(request);
 	if (!input.ip) return badRequest("Missing required field: ip");
 
+	const env = (locals.runtime?.env ?? {}) as { VISITOR_STATE?: KVNamespace };
 	const next = normalizeVisitorInput(input);
-	const { latest, recent, version } = pushVisitorRecord(next);
+	const { latest, recent, version } = await pushVisitorRecord(next, env);
 
 	return new Response(JSON.stringify({ ok: true, version, latest, recent }), {
 		status: 200,

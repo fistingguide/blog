@@ -3,7 +3,8 @@ import { getVisitorState } from "../lib/visitorState";
 
 export const prerender = false;
 
-const { latest, recent, version } = getVisitorState();
+const env = (Astro.locals.runtime?.env ?? {}) as { VISITOR_STATE?: KVNamespace };
+const { latest, recent, version } = await getVisitorState(env);
 ---
 
 <!doctype html>
