@@ -1,26 +1,46 @@
 ﻿---
 export const prerender = false;
-const cf = Astro.request.cf ?? {};
-
-const ipHeader = Astro.request.headers.get("cf-connecting-ip")
-	?? Astro.request.headers.get("x-forwarded-for")
-	?? Astro.clientAddress
-	?? "Unknown";
-
-const countryCode = typeof cf.country === "string" && cf.country.length === 2
-	? cf.country.toUpperCase()
-	: "";
 
 const toFlag = (code) => {
 	if (!/^[A-Z]{2}$/.test(code)) return "🏳️";
 	return String.fromCodePoint(...[...code].map((char) => 127397 + char.charCodeAt(0)));
 };
 
-const countryName = cf.countryName ?? countryCode ?? "Unknown";
-const city = cf.city ?? "Unknown City";
-const region = cf.region ?? "Unknown Region";
-const locationText = `${city}, ${region}`;
-const flag = toFlag(countryCode);
+const cf = Astro.request.cf ?? {};
+
+const rawIp = Astro.request.headers.get("cf-connecting-ip")
+	?? Astro.request.headers.get("x-forwarded-for")
+	?? Astro.clientAddress
+	?? "Unknown";
+
+const ip = rawIp.split(",")[0]?.trim() || "Unknown";
+
+const countryCode = typeof cf.country === "string" && cf.country.length === 2
+	? cf.country.toUpperCase()
+	: "";
+
+const currentVisitor = {
+	ip,
+	countryCode,
+	countryName: cf.countryName ?? countryCode ?? "Unknown Country",
+	city: cf.city ?? "Unknown City",
+	region: cf.region ?? "Unknown Region",
+	flag: toFlag(countryCode),
+	updatedAt: new Date().toLocaleString("zh-CN", { hour12: false })
+};
+
+const stateKey = "__latest_visitor_snapshot__";
+const globalState = globalThis as Record<string, any>;
+
+if (!globalState[stateKey] || globalState[stateKey].ip !== currentVisitor.ip) {
+	globalState[stateKey] = currentVisitor;
+}
+
+const shownVisitor = globalState[stateKey];
+const locationText = `${shownVisitor.city}, ${shownVisitor.region}`;
+const flagImageUrl = shownVisitor.countryCode
+	? `https://flagcdn.com/w80/${shownVisitor.countryCode.toLowerCase()}.png`
+	: "";
 ---
 
 <!doctype html>
@@ -28,54 +48,136 @@ const flag = toFlag(countryCode);
 	<head>
 		<meta charset="UTF-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-		<title>Visitor Info</title>
+		<title>Latest Visitor</title>
 		<style>
 			:root {
-				color-scheme: light;
+				--bg-1: #f6f9ff;
+				--bg-2: #e8fff7;
+				--card: rgba(255, 255, 255, 0.82);
+				--text-main: #0f172a;
+				--text-sub: #334155;
+				--line: rgba(15, 23, 42, 0.12);
 			}
+
 			* {
 				box-sizing: border-box;
 			}
+
 			body {
 				margin: 0;
 				min-height: 100vh;
 				display: grid;
 				place-items: center;
-				background: #ffffff;
-				font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+				padding: 24px;
+				font-family: "Avenir Next", "PingFang SC", "Microsoft YaHei", sans-serif;
+				background:
+					radial-gradient(circle at 15% 10%, #b8d9ff 0%, transparent 40%),
+					radial-gradient(circle at 85% 85%, #a7f3d0 0%, transparent 45%),
+					linear-gradient(135deg, var(--bg-1), var(--bg-2));
+				color: var(--text-main);
 			}
-			#panel {
+
+			.panel {
+				width: min(92vw, 540px);
+				padding: 24px;
+				border-radius: 22px;
+				background: var(--card);
+				backdrop-filter: blur(8px);
+				border: 1px solid var(--line);
+				box-shadow: 0 20px 50px rgba(15, 23, 42, 0.12);
+			}
+
+			.badge {
+				display: inline-flex;
+				align-items: center;
+				gap: 10px;
+				padding: 8px 14px;
+				border-radius: 999px;
+				background: rgba(255, 255, 255, 0.92);
+				border: 1px solid var(--line);
+				font-size: 18px;
+				font-weight: 700;
+			}
+
+			.flag-icon {
+				width: 28px;
+				height: 20px;
+				border-radius: 4px;
+				border: 1px solid var(--line);
+				object-fit: cover;
+				background: #fff;
+			}
+
+			h1 {
+				margin: 16px 0 8px;
+				font-size: clamp(24px, 5vw, 34px);
+				line-height: 1.15;
+			}
+
+			.meta {
+				margin: 0 0 18px;
+				font-size: 14px;
+				color: var(--text-sub);
+			}
+
+			.list {
 				display: grid;
 				gap: 10px;
-				padding: 20px 24px;
-				border: 1px solid #d8d8d8;
+			}
+
+			.item {
+				display: flex;
+				justify-content: space-between;
+				gap: 14px;
+				padding: 12px 14px;
 				border-radius: 12px;
-				min-width: min(90vw, 420px);
-				background: #ffffff;
-				color: #111111;
+				background: rgba(255, 255, 255, 0.72);
+				border: 1px solid var(--line);
 			}
-			.title {
-				font-size: 24px;
+
+			.key {
 				font-weight: 600;
+				color: var(--text-sub);
 			}
-			.line {
-				font-size: 16px;
-				line-height: 1.5;
+
+			.value {
+				font-weight: 700;
+				word-break: break-all;
+				text-align: right;
 			}
 		</style>
 	</head>
 	<body>
-		<div id="panel">
-			<div class="title">{flag} {countryName}</div>
-			<div class="line">IP: {ipHeader}</div>
-			<div class="line">地址: {locationText}</div>
-		</div>
-		<script>
-			setTimeout(() => {
-				const panel = document.getElementById("panel");
-				if (panel) panel.remove();
-			}, 1000);
-		</script>
+		<main class="panel">
+			<div class="badge">
+				{flagImageUrl ? (
+					<img class="flag-icon" src={flagImageUrl} alt={`${shownVisitor.countryName} flag`} loading="eager" />
+				) : (
+					<span>{shownVisitor.flag}</span>
+				)}
+				<span>{shownVisitor.countryName}</span>
+			</div>
+			<h1>最近访问者</h1>
+			<p class="meta">仅在检测到新 IP 时切换显示</p>
+
+			<section class="list" aria-label="visitor info">
+				<div class="item">
+					<span class="key">IP</span>
+					<span class="value">{shownVisitor.ip}</span>
+				</div>
+				<div class="item">
+					<span class="key">地址</span>
+					<span class="value">{locationText}</span>
+				</div>
+				<div class="item">
+					<span class="key">国家代码</span>
+					<span class="value">{shownVisitor.countryCode || "Unknown"}</span>
+				</div>
+				<div class="item">
+					<span class="key">最近更新时间</span>
+					<span class="value">{shownVisitor.updatedAt}</span>
+				</div>
+			</section>
+		</main>
 	</body>
 </html>
-
