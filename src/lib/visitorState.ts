@@ -1,38 +1,17 @@
-﻿export type VisitorSnapshot = {
+﻿export type VisitorRecord = {
 	ip: string;
-	countryCode: string;
-	countryName: string;
-	city: string;
-	region: string;
 	flag: string;
-	updatedAt: string;
-	updatedAtMs: number;
-};
-
-export type CountryVisit = {
-	countryCode: string;
-	countryName: string;
-	flag: string;
-	lastSeenAt: string;
-	lastSeenAtMs: number;
+	time: string;
+	timeMs: number;
 };
 
 type VisitorStateStore = {
-	latest: VisitorSnapshot | null;
+	latest: VisitorRecord | null;
 	version: number;
-	recentCountries: CountryVisit[];
+	recent: VisitorRecord[];
 };
 
-const STATE_KEY = "__latest_visitor_state__";
-
-const toFlag = (code: string): string => {
-	if (!/^[A-Z]{2}$/.test(code)) return "\u{1F3F3}\uFE0F";
-	return String.fromCodePoint(...[...code].map((char) => 127397 + char.charCodeAt(0)));
-};
-
-const normalizeIp = (raw: string): string => {
-	return raw.split(",")[0]?.trim() || "Unknown";
-};
+const STATE_KEY = "__api_visitor_state__";
 
 const getStore = (): VisitorStateStore => {
 	const globalState = globalThis as Record<string, unknown>;
@@ -40,83 +19,63 @@ const getStore = (): VisitorStateStore => {
 		globalState[STATE_KEY] = {
 			latest: null,
 			version: 0,
-			recentCountries: [],
+			recent: [],
 		} satisfies VisitorStateStore;
 	}
 	return globalState[STATE_KEY] as VisitorStateStore;
 };
 
-const updateRecentCountries = (store: VisitorStateStore, visitor: VisitorSnapshot): CountryVisit[] => {
-	const key = visitor.countryCode || visitor.countryName || "Unknown";
-	const filtered = store.recentCountries.filter((item) => {
-		const itemKey = item.countryCode || item.countryName || "Unknown";
-		return itemKey !== key;
-	});
-
-	const nextItem: CountryVisit = {
-		countryCode: visitor.countryCode,
-		countryName: visitor.countryName,
-		flag: visitor.flag,
-		lastSeenAt: visitor.updatedAt,
-		lastSeenAtMs: visitor.updatedAtMs,
-	};
-
-	store.recentCountries = [nextItem, ...filtered].slice(0, 5);
-	return store.recentCountries;
+const parseTimeToMs = (value: string): number => {
+	const asNumber = Number(value);
+	if (Number.isFinite(asNumber) && asNumber > 0) return asNumber;
+	const asDate = Date.parse(value);
+	if (Number.isNaN(asDate)) return Date.now();
+	return asDate;
 };
 
-export const buildVisitorFromRequest = (request: Request, clientAddress?: string): VisitorSnapshot => {
-	const req = request as Request & { cf?: Record<string, unknown> };
-	const cf = req.cf ?? {};
+export const normalizeVisitorInput = (input: {
+	ip?: string;
+	flag?: string;
+	time?: string;
+}): VisitorRecord => {
+	const ip = (input.ip ?? "").trim() || "Unknown";
+	const flag = (input.flag ?? "").trim() || "\u{1F3F3}\uFE0F";
+	const rawTime = (input.time ?? "").trim();
 
-	const rawIp =
-		request.headers.get("cf-connecting-ip") ??
-		request.headers.get("x-forwarded-for") ??
-		clientAddress ??
-		"Unknown";
-
-	const countryCode =
-		typeof cf.country === "string" && cf.country.length === 2 ? cf.country.toUpperCase() : "";
-
-	const now = Date.now();
-
-	return {
-		ip: normalizeIp(rawIp),
-		countryCode,
-		countryName: (cf.countryName as string) ?? countryCode ?? "Unknown Country",
-		city: (cf.city as string) ?? "Unknown City",
-		region: (cf.region as string) ?? "Unknown Region",
-		flag: toFlag(countryCode),
-		updatedAt: new Date(now).toLocaleString("zh-CN", { hour12: false }),
-		updatedAtMs: now,
-	};
-};
-
-export const upsertLatestVisitor = (
-	nextVisitor: VisitorSnapshot,
-): { visitor: VisitorSnapshot; version: number; changed: boolean; recentCountries: CountryVisit[] } => {
-	const store = getStore();
-	const changed = !store.latest || store.latest.ip !== nextVisitor.ip;
-
-	if (changed) {
-		store.latest = nextVisitor;
-		store.version += 1;
-		updateRecentCountries(store, nextVisitor);
+	if (rawTime) {
+		return {
+			ip,
+			flag,
+			time: rawTime,
+			timeMs: parseTimeToMs(rawTime),
+		};
 	}
 
+	const now = Date.now();
 	return {
-		visitor: store.latest ?? nextVisitor,
-		version: store.version,
-		changed,
-		recentCountries: store.recentCountries,
+		ip,
+		flag,
+		time: new Date(now).toLocaleString("zh-CN", { hour12: false }),
+		timeMs: now,
 	};
 };
 
-export const getLatestVisitorState = (): {
-	visitor: VisitorSnapshot | null;
-	version: number;
-	recentCountries: CountryVisit[];
-} => {
+export const pushVisitorRecord = (next: VisitorRecord): { latest: VisitorRecord; recent: VisitorRecord[]; version: number } => {
 	const store = getStore();
-	return { visitor: store.latest, version: store.version, recentCountries: store.recentCountries };
+	store.latest = next;
+	store.version += 1;
+
+	const withoutSame = store.recent.filter((item) => !(item.ip === next.ip && item.time === next.time && item.flag === next.flag));
+	store.recent = [next, ...withoutSame].slice(0, 5);
+
+	return {
+		latest: store.latest,
+		recent: store.recent,
+		version: store.version,
+	};
+};
+
+export const getVisitorState = (): { latest: VisitorRecord | null; recent: VisitorRecord[]; version: number } => {
+	const store = getStore();
+	return { latest: store.latest, recent: store.recent, version: store.version };
 };

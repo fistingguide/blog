@@ -1,23 +1,24 @@
-import type { APIRoute } from "astro";
-import { getLatestVisitorState } from "../../lib/visitorState";
+﻿import type { APIRoute } from "astro";
+import { getVisitorState } from "../../lib/visitorState";
 
 export const prerender = false;
 
 export const GET: APIRoute = async () => {
-	const { visitor, version, recentCountries } = getLatestVisitorState();
+	const { latest, recent, version } = getVisitorState();
 
 	return new Response(
 		JSON.stringify({
 			ok: true,
 			version,
-			visitor,
-			recentCountries,
+			latest,
+			recent,
 		}),
 		{
 			status: 200,
 			headers: {
 				"content-type": "application/json; charset=utf-8",
 				"cache-control": "no-store",
+				"access-control-allow-origin": "*",
 			},
 		},
 	);

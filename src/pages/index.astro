@@ -1,18 +1,9 @@
 ﻿---
-import { buildVisitorFromRequest, upsertLatestVisitor } from "../lib/visitorState";
+import { getVisitorState } from "../lib/visitorState";
 
 export const prerender = false;
 
-const currentVisitor = buildVisitorFromRequest(Astro.request, Astro.clientAddress);
-const { visitor: shownVisitor, version, recentCountries } = upsertLatestVisitor(currentVisitor);
-
-const locationText = `${shownVisitor.city}, ${shownVisitor.region}`;
-const flagImageUrl = shownVisitor.countryCode
-	? `https://flagcdn.com/w80/${shownVisitor.countryCode.toLowerCase()}.png`
-	: "";
-
-const getFlagUrl = (countryCode: string) =>
-	countryCode ? `https://flagcdn.com/w40/${countryCode.toLowerCase()}.png` : "";
+const { latest, recent, version } = getVisitorState();
 ---
 
 <!doctype html>
@@ -20,318 +11,208 @@ const getFlagUrl = (countryCode: string) =>
 	<head>
 		<meta charset="UTF-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-		<title>Latest Visitor</title>
+		<title>Visitor API Dashboard</title>
 		<style>
 			:root {
-				--bg-1: #f6f9ff;
-				--bg-2: #e8fff7;
-				--card: rgba(255, 255, 255, 0.82);
-				--text-main: #0f172a;
-				--text-sub: #334155;
+				--bg-a: #eef5ff;
+				--bg-b: #e9fff2;
+				--card: rgba(255, 255, 255, 0.86);
 				--line: rgba(15, 23, 42, 0.12);
+				--main: #0f172a;
+				--sub: #334155;
 			}
 
-			* {
-				box-sizing: border-box;
-			}
+			* { box-sizing: border-box; }
 
 			body {
 				margin: 0;
 				min-height: 100vh;
-				display: grid;
-				place-items: center;
-				padding: 24px;
+				padding: 18px;
 				font-family: "Avenir Next", "PingFang SC", "Microsoft YaHei", sans-serif;
 				background:
-					radial-gradient(circle at 15% 10%, #b8d9ff 0%, transparent 40%),
-					radial-gradient(circle at 85% 85%, #a7f3d0 0%, transparent 45%),
-					linear-gradient(135deg, var(--bg-1), var(--bg-2));
-				color: var(--text-main);
+					radial-gradient(circle at 10% 0%, #b8d7ff 0%, transparent 35%),
+					radial-gradient(circle at 90% 100%, #a7f3d0 0%, transparent 35%),
+					linear-gradient(135deg, var(--bg-a), var(--bg-b));
+				color: var(--main);
+				display: grid;
+				grid-template-columns: minmax(240px, 320px) minmax(320px, 680px);
+				gap: 14px;
+				align-content: center;
+				justify-content: center;
 			}
 
-			.panel {
-				width: min(92vw, 540px);
-				padding: 24px;
-				border-radius: 22px;
+			.card {
 				background: var(--card);
-				backdrop-filter: blur(8px);
 				border: 1px solid var(--line);
-				box-shadow: 0 20px 50px rgba(15, 23, 42, 0.12);
+				border-radius: 16px;
+				box-shadow: 0 14px 30px rgba(15, 23, 42, 0.12);
+				backdrop-filter: blur(6px);
 			}
 
+			.history { padding: 12px; }
+			.history h2 { margin: 0 0 8px; font-size: 14px; color: var(--sub); }
+			.history ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+			.history li {
+				display: flex;
+				justify-content: space-between;
+				align-items: center;
+				gap: 8px;
+				font-size: 12px;
+				padding: 7px 8px;
+				border-radius: 10px;
+				border: 1px solid var(--line);
+				background: rgba(255,255,255,0.8);
+			}
+			.row-left { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
+			.row-left img { width: 18px; height: 13px; border-radius: 2px; border: 1px solid var(--line); object-fit: cover; }
+			.row-left span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 120px; }
+			.row-time { color: var(--sub); white-space: nowrap; }
+
+			.main { padding: 18px; }
 			.badge {
 				display: inline-flex;
 				align-items: center;
-				gap: 10px;
-				padding: 8px 14px;
-				border-radius: 999px;
-				background: rgba(255, 255, 255, 0.92);
-				border: 1px solid var(--line);
-				font-size: 18px;
-				font-weight: 700;
-			}
-
-			.flag-icon {
-				width: 28px;
-				height: 20px;
-				border-radius: 4px;
-				border: 1px solid var(--line);
-				object-fit: cover;
-				background: #fff;
-			}
-
-			h1 {
-				margin: 16px 0 8px;
-				font-size: clamp(24px, 5vw, 34px);
-				line-height: 1.15;
-			}
-
-			.meta {
-				margin: 0 0 18px;
-				font-size: 14px;
-				color: var(--text-sub);
-			}
-
-			.list {
-				display: grid;
-				gap: 10px;
-			}
-
-			.item {
-				display: flex;
-				justify-content: space-between;
-				gap: 14px;
-				padding: 12px 14px;
-				border-radius: 12px;
-				background: rgba(255, 255, 255, 0.72);
-				border: 1px solid var(--line);
-			}
-
-			.key {
-				font-weight: 600;
-				color: var(--text-sub);
-			}
-
-			.value {
-				font-weight: 700;
-				word-break: break-all;
-				text-align: right;
-			}
-
-			#country-history {
-				position: fixed;
-				top: 12px;
-				left: 12px;
-				width: min(86vw, 280px);
-				padding: 12px;
-				border-radius: 12px;
-				border: 1px solid var(--line);
-				background: rgba(255, 255, 255, 0.9);
-				backdrop-filter: blur(6px);
-				box-shadow: 0 12px 22px rgba(15, 23, 42, 0.16);
-			}
-
-			#country-history h2 {
-				margin: 0 0 8px;
-				font-size: 13px;
-				color: var(--text-sub);
-			}
-
-			#country-history-list {
-				list-style: none;
-				margin: 0;
-				padding: 0;
-				display: grid;
-				gap: 6px;
-			}
-
-			#country-history-list li {
-				display: flex;
-				align-items: center;
-				justify-content: space-between;
 				gap: 8px;
-				padding: 6px 8px;
-				border-radius: 8px;
-				background: rgba(255, 255, 255, 0.86);
+				padding: 8px 12px;
 				border: 1px solid var(--line);
+				border-radius: 999px;
+				background: rgba(255,255,255,0.9);
+				font-weight: 700;
+			}
+			.badge img { width: 26px; height: 18px; border-radius: 3px; border: 1px solid var(--line); object-fit: cover; }
+			h1 { margin: 12px 0 6px; font-size: clamp(22px, 5vw, 32px); }
+			.sub { margin: 0 0 14px; color: var(--sub); font-size: 14px; }
+			.grid { display: grid; gap: 8px; }
+			.item {
+				display: flex; justify-content: space-between; gap: 12px;
+				padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line); background: rgba(255,255,255,0.76);
+			}
+			.key { color: var(--sub); font-weight: 600; }
+			.value { font-weight: 700; text-align: right; word-break: break-all; }
+
+			.api {
+				margin-top: 14px;
+				padding: 10px 12px;
+				border-radius: 10px;
+				border: 1px dashed var(--line);
+				background: rgba(255,255,255,0.6);
 				font-size: 12px;
+				line-height: 1.5;
 			}
+			code { font-family: Consolas, "Courier New", monospace; }
 
-			.history-left {
-				display: inline-flex;
-				align-items: center;
-				gap: 6px;
-				min-width: 0;
-			}
-
-			.history-flag {
-				width: 18px;
-				height: 13px;
-				border-radius: 2px;
-				border: 1px solid var(--line);
-				object-fit: cover;
-				background: #fff;
-			}
-
-			.history-name {
-				white-space: nowrap;
-				overflow: hidden;
-				text-overflow: ellipsis;
-				max-width: 120px;
-			}
-
-			.history-time {
-				color: var(--text-sub);
-				white-space: nowrap;
+			@media (max-width: 880px) {
+				body { grid-template-columns: 1fr; align-content: start; }
 			}
 		</style>
 	</head>
 	<body data-version={String(version)}>
-		<aside id="country-history" aria-label="recent countries">
-			<h2>最近 5 个访问国家</h2>
-			<ul id="country-history-list">
-				{recentCountries.map((item) => {
-					const itemFlagUrl = getFlagUrl(item.countryCode);
-					return (
-						<li>
-							<span class="history-left">
-								{itemFlagUrl ? (
-									<img class="history-flag" src={itemFlagUrl} alt={`${item.countryName} flag`} loading="eager" />
-								) : (
-									<span>{item.flag}</span>
-								)}
-								<span class="history-name">{item.countryName}</span>
-							</span>
-							<span class="history-time">{item.lastSeenAt}</span>
-						</li>
-					);
-				})}
+		<aside class="card history">
+			<h2>最近 5 条来访更新</h2>
+			<ul id="recent-list">
+				{recent.map((item) => (
+					<li>
+						<span class="row-left">
+							{item.flag.startsWith("http") ? <img src={item.flag} alt="flag" loading="eager" /> : <span>{item.flag}</span>}
+							<span>{item.ip}</span>
+						</span>
+						<span class="row-time">{item.time}</span>
+					</li>
+				))}
 			</ul>
 		</aside>
 
-		<main class="panel">
-			<div class="badge" id="country-badge">
-				{flagImageUrl ? (
-					<img class="flag-icon" id="flag-image" src={flagImageUrl} alt={`${shownVisitor.countryName} flag`} loading="eager" />
+		<main class="card main">
+			<div class="badge" id="latest-flag-wrap">
+				{latest?.flag?.startsWith("http") ? (
+					<img id="latest-flag-img" src={latest.flag} alt="flag" loading="eager" />
 				) : (
-					<span id="flag-emoji">{shownVisitor.flag}</span>
+					<span id="latest-flag-text">{latest?.flag ?? "🏳️"}</span>
 				)}
-				<span id="country-name">{shownVisitor.countryName}</span>
+				<span>Latest</span>
 			</div>
-			<h1>最近访问者</h1>
-			<p class="meta">仅在检测到新 IP 时切换显示</p>
+			<h1>实时来访者信息</h1>
+			<p class="sub">数据来自外部网站调用 API 推送。</p>
 
-			<section class="list" aria-label="visitor info">
-				<div class="item">
-					<span class="key">IP</span>
-					<span class="value" id="visitor-ip">{shownVisitor.ip}</span>
-				</div>
-				<div class="item">
-					<span class="key">地址</span>
-					<span class="value" id="visitor-location">{locationText}</span>
-				</div>
-				<div class="item">
-					<span class="key">国家代码</span>
-					<span class="value" id="visitor-country-code">{shownVisitor.countryCode || "Unknown"}</span>
-				</div>
-				<div class="item">
-					<span class="key">最近更新时间</span>
-					<span class="value" id="visitor-updated-at">{shownVisitor.updatedAt}</span>
-				</div>
+			<section class="grid">
+				<div class="item"><span class="key">IP</span><span class="value" id="latest-ip">{latest?.ip ?? "-"}</span></div>
+				<div class="item"><span class="key">时间</span><span class="value" id="latest-time">{latest?.time ?? "-"}</span></div>
+				<div class="item"><span class="key">版本</span><span class="value" id="latest-version">{String(version)}</span></div>
 			</section>
+
+			<div class="api">
+				<div>写入接口（GET）：<code>/api/report-visitor.json?ip=1.2.3.4&flag=🇯🇵&time=2026-04-05%2013:20:00</code></div>
+				<div>写入接口（POST JSON）：<code>&#123;"ip":"1.2.3.4","flag":"https://.../jp.png","time":"2026-04-05 13:20:00"&#125;</code></div>
+				<div>读取接口：<code>/api/latest-visitor.json</code></div>
+			</div>
 		</main>
 
 		<script>
-			const toFlag = (code) => {
-				if (!/^[A-Z]{2}$/.test(code)) return "\u{1F3F3}\uFE0F";
-				return String.fromCodePoint(...[...code].map((char) => 127397 + char.charCodeAt(0)));
-			};
+			let knownVersion = Number(document.body.dataset.version || "0");
 
-			const body = document.body;
-			let knownVersion = Number(body.dataset.version || "0");
+			const latestIpEl = document.getElementById("latest-ip");
+			const latestTimeEl = document.getElementById("latest-time");
+			const latestVersionEl = document.getElementById("latest-version");
+			const latestFlagWrapEl = document.getElementById("latest-flag-wrap");
+			const recentListEl = document.getElementById("recent-list");
 
-			const countryNameEl = document.getElementById("country-name");
-			const ipEl = document.getElementById("visitor-ip");
-			const locationEl = document.getElementById("visitor-location");
-			const countryCodeEl = document.getElementById("visitor-country-code");
-			const updatedAtEl = document.getElementById("visitor-updated-at");
-			const badgeEl = document.getElementById("country-badge");
-			const countryHistoryListEl = document.getElementById("country-history-list");
-
-			const renderFlag = (countryCode, countryName) => {
-				if (!badgeEl) return;
-				const oldImg = document.getElementById("flag-image");
-				const oldEmoji = document.getElementById("flag-emoji");
-
+			const renderLatestFlag = (flag) => {
+				if (!latestFlagWrapEl) return;
+				const oldImg = document.getElementById("latest-flag-img");
+				const oldText = document.getElementById("latest-flag-text");
 				if (oldImg) oldImg.remove();
-				if (oldEmoji) oldEmoji.remove();
+				if (oldText) oldText.remove();
 
-				if (/^[A-Z]{2}$/.test(countryCode)) {
+				if (typeof flag === "string" && flag.startsWith("http")) {
 					const img = document.createElement("img");
-					img.id = "flag-image";
-					img.className = "flag-icon";
-					img.alt = `${countryName} flag`;
+					img.id = "latest-flag-img";
+					img.src = flag;
+					img.alt = "flag";
 					img.loading = "eager";
-					img.src = `https://flagcdn.com/w80/${countryCode.toLowerCase()}.png`;
-					badgeEl.insertBefore(img, countryNameEl);
+					latestFlagWrapEl.insertBefore(img, latestFlagWrapEl.firstChild);
 					return;
 				}
-
 				const span = document.createElement("span");
-				span.id = "flag-emoji";
-				span.textContent = toFlag(countryCode || "");
-				badgeEl.insertBefore(span, countryNameEl);
+				span.id = "latest-flag-text";
+				span.textContent = flag || "🏳️";
+				latestFlagWrapEl.insertBefore(span, latestFlagWrapEl.firstChild);
 			};
 
-			const applyVisitor = (visitor) => {
-				if (!visitor) return;
-				if (countryNameEl) countryNameEl.textContent = visitor.countryName || "Unknown Country";
-				if (ipEl) ipEl.textContent = visitor.ip || "Unknown";
-				if (locationEl) locationEl.textContent = `${visitor.city || "Unknown City"}, ${visitor.region || "Unknown Region"}`;
-				if (countryCodeEl) countryCodeEl.textContent = visitor.countryCode || "Unknown";
-				if (updatedAtEl) updatedAtEl.textContent = visitor.updatedAt || "-";
-				renderFlag(visitor.countryCode || "", visitor.countryName || "Unknown Country");
-			};
-
-			const renderRecentCountries = (recentCountries) => {
-				if (!countryHistoryListEl) return;
-				countryHistoryListEl.innerHTML = "";
-
-				for (const item of recentCountries.slice(0, 5)) {
+			const renderRecent = (recent) => {
+				if (!recentListEl) return;
+				recentListEl.innerHTML = "";
+				for (const item of (recent || []).slice(0, 5)) {
 					const li = document.createElement("li");
-
 					const left = document.createElement("span");
-					left.className = "history-left";
+					left.className = "row-left";
 
-					if (/^[A-Z]{2}$/.test(item.countryCode || "")) {
+					if (typeof item.flag === "string" && item.flag.startsWith("http")) {
 						const img = document.createElement("img");
-						img.className = "history-flag";
+						img.src = item.flag;
+						img.alt = "flag";
 						img.loading = "eager";
-						img.alt = `${item.countryName || "Unknown"} flag`;
-						img.src = `https://flagcdn.com/w40/${String(item.countryCode).toLowerCase()}.png`;
 						left.appendChild(img);
 					} else {
-						const emoji = document.createElement("span");
-						emoji.textContent = toFlag(item.countryCode || "");
-						left.appendChild(emoji);
+						const flagText = document.createElement("span");
+						flagText.textContent = item.flag || "🏳️";
+						left.appendChild(flagText);
 					}
 
-					const name = document.createElement("span");
-					name.className = "history-name";
-					name.textContent = item.countryName || "Unknown Country";
-					left.appendChild(name);
+					const ip = document.createElement("span");
+					ip.textContent = item.ip || "Unknown";
+					left.appendChild(ip);
 
 					const time = document.createElement("span");
-					time.className = "history-time";
-					time.textContent = item.lastSeenAt || "-";
+					time.className = "row-time";
+					time.textContent = item.time || "-";
 
 					li.appendChild(left);
 					li.appendChild(time);
-					countryHistoryListEl.appendChild(li);
+					recentListEl.appendChild(li);
 				}
 			};
 
-			const pollLatest = async () => {
+			const poll = async () => {
 				try {
 					const res = await fetch("/api/latest-visitor.json", { cache: "no-store" });
 					if (!res.ok) return;
@@ -339,18 +220,22 @@ const getFlagUrl = (countryCode: string) =>
 					const nextVersion = Number(data.version || 0);
 					if (nextVersion <= knownVersion) return;
 
-					if (data.visitor) {
-						applyVisitor(data.visitor);
+					const latest = data.latest || null;
+					if (latest) {
+						if (latestIpEl) latestIpEl.textContent = latest.ip || "-";
+						if (latestTimeEl) latestTimeEl.textContent = latest.time || "-";
+						renderLatestFlag(latest.flag || "🏳️");
 					}
 
-					renderRecentCountries(Array.isArray(data.recentCountries) ? data.recentCountries : []);
+					renderRecent(Array.isArray(data.recent) ? data.recent : []);
+					if (latestVersionEl) latestVersionEl.textContent = String(nextVersion);
 					knownVersion = nextVersion;
 				} catch {
 					// ignore polling errors
 				}
 			};
 
-			setInterval(pollLatest, 2500);
+			setInterval(poll, 2000);
 		</script>
 	</body>
 </html>
